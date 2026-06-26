@@ -71,7 +71,7 @@ Place a shortcut to `ClaudeWidget.exe` in:
 | Click tray icon | Show / hide the panel |
 | Right-click tray icon | Menu: Refresh, Settings, Quit |
 | Drag the panel | Reposition (saved automatically) |
-| 📌 / 📍 button | Toggle always-on-top — 📍 with purple background = pinned (on top), 📌 grey = free |
+| 📌 button | Toggle always-on-top — white background = pinned (on top), transparent = free |
 | ⚙ button | Open settings (refresh interval) |
 | ↻ button | Force immediate refresh |
 
