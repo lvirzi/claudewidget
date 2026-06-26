@@ -366,7 +366,12 @@ QPushButton:not(#ib) {{
 }}
 QPushButton:not(#ib):hover {{ background: #9099ff; }}
 QPushButton:not(#ib)[flat="true"] {{
-    background: {C_CARD}; color: {C_PRI};
+    background: transparent;
+    color: {C_PRI};
+    border: 1px solid {C_BORDER};
+}}
+QPushButton:not(#ib)[flat="true"]:hover {{
+    background: {C_CARD};
 }}
 """
 
@@ -557,15 +562,13 @@ class WidgetWindow(QWidget):
 
     def _update_pin_style(self):
         if self._pinned:
-            self.pin_btn.setText("📍")
             self.pin_btn.setStyleSheet(
-                f"background: {C_ACCENT}; color: white; border-radius: 4px;"
+                "background: white; border-radius: 4px;"
             )
             self.pin_btn.setToolTip("Unpin (always-on-top ON)")
         else:
-            self.pin_btn.setText("📌")
             self.pin_btn.setStyleSheet(
-                f"background: transparent; color: {C_SEC}; border-radius: 4px;"
+                f"background: transparent; border-radius: 4px;"
             )
             self.pin_btn.setToolTip("Pin (always-on-top OFF)")
 
