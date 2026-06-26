@@ -9,11 +9,23 @@ A Windows desktop widget that monitors your [Claude Code](https://claude.ai/code
 | Section | Info |
 |---|---|
 | **Model** | Active model name and maximum context window |
+| **Sessions** | Live status of every running Claude Code process |
 | **Active Session** | Tokens used in the current conversation, with a progress bar |
 | **Today** | Input / output tokens, cache reads (with savings), estimated cost |
 | **This Month** | Total tokens and estimated cost |
 
 The cost figures are labelled `Cost~` — they represent the API-equivalent price, useful as a reference even if you are on a claude.ai subscription.
+
+### Session status indicators
+
+| Symbol | Colour | Meaning |
+|---|---|---|
+| `●` | Green | busy — actively processing |
+| `◑` | Yellow | waiting · input — idle, waiting for your next message |
+| `◉` | Orange | waiting · permission — a tool use needs your approval |
+| `○` | Gray | closed — process has exited |
+
+Up to 4 sessions are shown simultaneously. The widget checks whether each process PID is still alive via the Win32 API (no extra dependencies).
 
 ## How it works
 
