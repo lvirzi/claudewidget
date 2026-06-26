@@ -478,31 +478,13 @@ class WidgetWindow(QWidget):
 
     def _apply_flags(self, show: bool = True):
         visible = self.isVisible()
-        flags   = (Qt.WindowType.FramelessWindowHint |
-                   Qt.WindowType.Tool |
-                   Qt.WindowType.WindowStaysOnTopHint)   # always create as topmost
+        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+        if self._pinned:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         if show or visible:
             self.show()
-        # Apply the actual topmost state via Win32 after the HWND exists
-        self._set_topmost(self._pinned)
-
-    def _set_topmost(self, topmost: bool):
-        """Toggle always-on-top without recreating the window (no flicker)."""
-        try:
-            import ctypes
-            HWND_TOPMOST   = -1
-            HWND_NOTOPMOST = -2
-            SWP_NOMOVE     = 0x0002
-            SWP_NOSIZE     = 0x0001
-            hwnd = int(self.winId())
-            flag = HWND_TOPMOST if topmost else HWND_NOTOPMOST
-            ctypes.windll.user32.SetWindowPos(
-                hwnd, flag, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE
-            )
-        except Exception:
-            pass
 
     def _update_pin_style(self):
         if self._pinned:
@@ -627,7 +609,8 @@ class WidgetWindow(QWidget):
         self._pinned = not self._pinned
         self.cfg.data["always_on_top"] = self._pinned
         self.cfg.save()
-        self._set_topmost(self._pinned)   # no window recreation, no flicker
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, self._pinned)
+        self.show()
         self._update_pin_style()
 
     def _open_settings(self):
