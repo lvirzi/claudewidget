@@ -59,15 +59,15 @@ Place a shortcut to `ClaudeWidget.exe` in:
 | Click tray icon | Show / hide the panel |
 | Right-click tray icon | Menu: Refresh, Settings, Quit |
 | Drag the panel | Reposition (saved automatically) |
-| 📌 button | Toggle always-on-top |
+| 📌 / 📍 button | Toggle always-on-top — 📍 with purple background = pinned (on top), 📌 grey = free |
 | ⚙ button | Open settings (refresh interval) |
 | ↻ button | Force immediate refresh |
 
 ## Project structure
 
 ```
-claude_widget.py   # Full source — single file, ~350 lines
-requirements.txt   # PyQt6 (requests removed, not needed)
+claude_widget.py   # Full source — single file, ~400 lines
+requirements.txt   # PyQt6 only, no API key needed
 build.bat          # PyInstaller build script
 ```
 
