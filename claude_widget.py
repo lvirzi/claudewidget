@@ -224,6 +224,52 @@ class LocalReader:
             "ts":      last_ts,
         }
 
+    def read_sessions(self) -> list:
+        """
+        Returns list of Claude Code sessions from ~/.claude/sessions/*.json,
+        sorted by: alive first, then most recently updated.
+        Each dict has: pid, alive, status, waitingFor, project, updatedAt.
+        """
+        sessions_dir = CLAUDE_DIR / "sessions"
+        result = []
+        if not sessions_dir.exists():
+            return result
+        for f in sessions_dir.glob("*.json"):
+            try:
+                with open(f, encoding="utf-8") as fh:
+                    s = json.load(fh)
+                pid   = s.get("pid", 0)
+                alive = _is_pid_running(pid)
+                cwd   = s.get("cwd", "")
+                result.append({
+                    "pid":        pid,
+                    "alive":      alive,
+                    "status":     s.get("status", ""),
+                    "waitingFor": s.get("waitingFor", ""),
+                    "project":    Path(cwd).name if cwd else "?",
+                    "updatedAt":  s.get("updatedAt", 0),
+                })
+            except Exception:
+                continue
+        result.sort(key=lambda x: (not x["alive"], -x["updatedAt"]))
+        return result
+
+
+def _is_pid_running(pid: int) -> bool:
+    """Check if a Windows process is alive without importing psutil."""
+    if not pid:
+        return False
+    try:
+        import ctypes
+        PROCESS_QUERY_INFORMATION = 0x0400
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_INFORMATION, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+    except Exception:
+        pass
+    return False
+
 
 def calc_cost(model: str, inp: int, out: int, cc: int, cr: int) -> float:
     info = model_info(model)
@@ -256,10 +302,12 @@ class RefreshWorker(QThread):
 
     def run(self):
         try:
-            usage   = self.reader.read_usage(days=31)
-            active  = self.reader.read_active_session()
-            model   = self.reader.get_settings_model()
-            self.done.emit({"usage": usage, "active": active, "model": model})
+            usage    = self.reader.read_usage(days=31)
+            active   = self.reader.read_active_session()
+            model    = self.reader.get_settings_model()
+            sessions = self.reader.read_sessions()
+            self.done.emit({"usage": usage, "active": active,
+                            "model": model, "sessions": sessions})
         except Exception as e:
             self.done.emit({"error": str(e)})
 
@@ -272,6 +320,12 @@ C_SEC    = "#8892a4"
 C_MONO   = "#a8d5a2"
 C_CACHE  = "#f6c90e"
 C_CARD   = "#16213e"
+
+# Session status colours
+C_BUSY  = "#4ade80"   # green  — actively processing
+C_WAIT  = "#facc15"   # yellow — waiting for user input
+C_PERM  = "#fb923c"   # orange — waiting for permission
+C_DEAD  = "#475569"   # slate  — process no longer running
 
 QSS = f"""
 * {{
@@ -291,6 +345,7 @@ QSS = f"""
 #vcache {{ color: {C_CACHE}; font-family: 'Consolas', monospace; }}
 #vcost  {{ color: #ff9966; font-family: 'Consolas', monospace; }}
 #status {{ font-size: 10px; color: {C_SEC}; }}
+#sess   {{ font-size: 11px; font-family: 'Consolas', monospace; }}
 #sep    {{ background: {C_BORDER}; max-height: 1px; border: none; }}
 QLabel  {{ background: transparent; }}
 QPushButton#ib {{
@@ -415,6 +470,20 @@ class WidgetWindow(QWidget):
         self.r_maxctx  = Row("Max ctx", 82)
         v.addLayout(self.r_model.layout)
         v.addLayout(self.r_maxctx.layout)
+        v.addWidget(sep())
+
+        # SESSIONS — dynamic rows (up to 4 slots, pre-allocated)
+        v.addWidget(sec("SESSIONS"))
+        self._sess_labels = []
+        for _ in range(4):
+            lbl = QLabel()
+            lbl.setObjectName("sess")
+            lbl.hide()
+            v.addWidget(lbl)
+            self._sess_labels.append(lbl)
+        self._sess_none = QLabel("  no active sessions")
+        self._sess_none.setObjectName("key")
+        v.addWidget(self._sess_none)
         v.addWidget(sep())
 
         # ACTIVE SESSION
@@ -545,19 +614,67 @@ class WidgetWindow(QWidget):
         self._worker.done.connect(self._on_data)
         self._worker.start()
 
+    def _render_sessions(self, sessions: list):
+        alive = [s for s in sessions if s["alive"]]
+        dead  = [s for s in sessions if not s["alive"]]
+        shown = (alive + dead)[:4]
+
+        if not shown:
+            self._sess_none.show()
+            for lbl in self._sess_labels:
+                lbl.hide()
+            return
+
+        self._sess_none.hide()
+        for i, lbl in enumerate(self._sess_labels):
+            if i < len(shown):
+                s = shown[i]
+                dot, color, tag = self._sess_fmt(s)
+                project = s["project"][:18].ljust(18)
+                lbl.setText(f"{dot}  {project}  {tag}")
+                lbl.setStyleSheet(f"color: {color};")
+                lbl.show()
+            else:
+                lbl.hide()
+
+        if len(alive) + len(dead) > 4:
+            extra = len(alive) + len(dead) - 4
+            self._sess_labels[3].setText(f"   … and {extra} more")
+            self._sess_labels[3].setStyleSheet(f"color: {C_SEC};")
+            self._sess_labels[3].show()
+
+    @staticmethod
+    def _sess_fmt(s: dict) -> tuple:
+        """Returns (dot_char, colour, tag_text) for a session dict."""
+        if not s["alive"]:
+            return "○", C_DEAD, "closed"
+        status = s.get("status", "")
+        wf     = s.get("waitingFor", "") or ""
+        if status == "busy":
+            return "●", C_BUSY, "busy"
+        if "permission" in wf.lower():
+            return "◉", C_PERM, "waiting · permission"
+        if status == "waiting":
+            return "◑", C_WAIT, "waiting · input"
+        return "◌", C_SEC, status or "idle"
+
     def _on_data(self, data: dict):
         if "error" in data:
             self.status.setText(f"✗  {data['error']}")
             return
 
-        usage  = data["usage"]
-        active = data["active"]
-        model  = data.get("model") or "claude-sonnet-4-6"
-        info   = model_info(model)
+        usage    = data["usage"]
+        active   = data["active"]
+        model    = data.get("model") or "claude-sonnet-4-6"
+        info     = model_info(model)
+        sessions = data.get("sessions", [])
 
         # ── MODEL ──────────────────────────────────────────────────────
         self.r_model.set(model)
         self.r_maxctx.set(fmt_tok(info["context"]) + " tokens")
+
+        # ── SESSIONS ───────────────────────────────────────────────────
+        self._render_sessions(sessions)
 
         # ── ACTIVE SESSION ─────────────────────────────────────────────
         if active:
