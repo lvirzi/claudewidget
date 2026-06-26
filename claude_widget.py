@@ -478,18 +478,45 @@ class WidgetWindow(QWidget):
 
     def _apply_flags(self, show: bool = True):
         visible = self.isVisible()
-        flags   = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
-        if self._pinned:
-            flags |= Qt.WindowType.WindowStaysOnTopHint
+        flags   = (Qt.WindowType.FramelessWindowHint |
+                   Qt.WindowType.Tool |
+                   Qt.WindowType.WindowStaysOnTopHint)   # always create as topmost
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         if show or visible:
             self.show()
+        # Apply the actual topmost state via Win32 after the HWND exists
+        self._set_topmost(self._pinned)
+
+    def _set_topmost(self, topmost: bool):
+        """Toggle always-on-top without recreating the window (no flicker)."""
+        try:
+            import ctypes
+            HWND_TOPMOST   = -1
+            HWND_NOTOPMOST = -2
+            SWP_NOMOVE     = 0x0002
+            SWP_NOSIZE     = 0x0001
+            hwnd = int(self.winId())
+            flag = HWND_TOPMOST if topmost else HWND_NOTOPMOST
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, flag, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE
+            )
+        except Exception:
+            pass
 
     def _update_pin_style(self):
-        self.pin_btn.setStyleSheet(
-            f"color: {C_ACCENT};" if self._pinned else f"color: {C_SEC};"
-        )
+        if self._pinned:
+            self.pin_btn.setText("📍")
+            self.pin_btn.setStyleSheet(
+                f"background: {C_ACCENT}; color: white; border-radius: 4px;"
+            )
+            self.pin_btn.setToolTip("Unpin (always-on-top ON)")
+        else:
+            self.pin_btn.setText("📌")
+            self.pin_btn.setStyleSheet(
+                f"background: transparent; color: {C_SEC}; border-radius: 4px;"
+            )
+            self.pin_btn.setToolTip("Pin (always-on-top OFF)")
 
     # ── Timer & file watcher ───────────────────────────────────────────
     def _setup_timer(self):
@@ -600,7 +627,7 @@ class WidgetWindow(QWidget):
         self._pinned = not self._pinned
         self.cfg.data["always_on_top"] = self._pinned
         self.cfg.save()
-        self._apply_flags(show=True)
+        self._set_topmost(self._pinned)   # no window recreation, no flicker
         self._update_pin_style()
 
     def _open_settings(self):
